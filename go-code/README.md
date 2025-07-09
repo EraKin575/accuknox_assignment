@@ -65,7 +65,7 @@ Here the channel earlier created is taking an anonymous function as a value whic
 
 ### 2. Giving use-cases of what these constructs could be used for.
 
-<!-- (No answer was provided in the original text.) -->
+
 
 ---
 

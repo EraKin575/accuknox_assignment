@@ -4,45 +4,44 @@
 #include <linux/tcp.h>
 #include <bpf/bpf_helpers.h>
 
-#define DEFAULT_PORT 8080  // ✅ no '='
+// Create a map to store the configurable destination port
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u16);
+} config_map SEC(".maps");
 
 SEC("xdp")
 int tcp_drop(struct xdp_md *ctx) {
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
 
-    // Ethernet header
     struct ethhdr *eth = data;
     if ((void *)(eth + 1) > data_end)
         return XDP_PASS;
 
-    // Filter only IPv4 packets
     if (eth->h_proto != __constant_htons(ETH_P_IP))
         return XDP_PASS;
 
-    // IP header
     struct iphdr *iph = (void *)(eth + 1);
     if ((void *)(iph + 1) > data_end)
         return XDP_PASS;
 
-    // Only TCP packets
     if (iph->protocol != IPPROTO_TCP)
         return XDP_PASS;
 
-    // Calculate IP header length
     int ip_hdr_len = iph->ihl * 4;
-
-    // TCP header
     struct tcphdr *tcph = (void *)iph + ip_hdr_len;
     if ((void *)(tcph + 1) > data_end)
         return XDP_PASS;
 
-    // Drop if destination port is DEFAULT_PORT
-    if (tcph->dest == __constant_htons(DEFAULT_PORT))
+    __u32 key = 0;
+    __u16 *port = bpf_map_lookup_elem(&config_map, &key);
+    if (port && tcph->dest == __constant_htons(*port))
         return XDP_DROP;
 
     return XDP_PASS;
 }
 
-// License is required for eBPF programs
 char _license[] SEC("license") = "GPL";
