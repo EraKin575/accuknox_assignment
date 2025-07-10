@@ -1,14 +1,13 @@
 package main
 
 import (
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
-	"github.com/vishvananda/netlink"
 )
 
 const (
@@ -16,76 +15,64 @@ const (
 )
 
 func main() {
-	// CLI arguments
-	iface := flag.String("iface", "wlp57s0", "Interface to attach tc program to")
-	proc := flag.String("proc", "nc", "Allowed process name (e.g. nc)")
-	objPath := flag.String("obj", "tc_ingress.o", "Path to compiled eBPF object file")
+	// CLI flags
+	cgroupPath := flag.String("cgroup", "/sys/fs/cgroup/mygroup", "Path to cgroup v2 directory")
+	procName := flag.String("proc", "curl", "Allowed process name (e.g. curl)")
+	objPath := flag.String("obj", "tcp_comm_filter.o", "Path to compiled eBPF object file")
 	flag.Parse()
 
-	// Load the eBPF object
+	// Load compiled BPF object
 	spec, err := ebpf.LoadCollectionSpec(*objPath)
 	if err != nil {
-		log.Fatalf("failed to load eBPF spec: %v", err)
+		log.Fatalf("failed to load BPF spec: %v", err)
 	}
 
 	coll, err := ebpf.NewCollection(spec)
 	if err != nil {
-		log.Fatalf("failed to create collection: %v", err)
+		log.Fatalf("failed to create BPF collection: %v", err)
 	}
 	defer coll.Close()
 
-	// Get program
-	prog := coll.Programs["tc_ingress"]
+	// Get the BPF program by name
+	prog := coll.Programs["filter_tcp_connect"]
 	if prog == nil {
-		log.Fatalf("program tc_ingress not found")
+		log.Fatalf("program filter_tcp_connect not found")
 	}
 
-	// Get the BPF map
+	// Get the allowed_comm map
 	allowedMap := coll.Maps["allowed_comm"]
 	if allowedMap == nil {
 		log.Fatalf("map allowed_comm not found")
 	}
 
-	// Pad proc name to 16 bytes (task->comm is fixed length)
+	// Prepare padded process name (16 bytes)
 	var comm [16]byte
-	copy(comm[:], *proc)
+	copy(comm[:], *procName)
 
-	// Write it to the map
+	// Write it into the map
 	if err := allowedMap.Update(mapKey, comm, ebpf.UpdateAny); err != nil {
-		log.Fatalf("failed to update allowed_comm map: %v", err)
+		log.Fatalf("failed to update map: %v", err)
 	}
 
-	// Attach using tc
-	linkIface, err := netlink.LinkByName(*iface)
+	// Open the cgroup directory
+	cgroupFd, err := os.Open(*cgroupPath)
 	if err != nil {
-		log.Fatalf("could not find interface %s: %v", *iface, err)
+		log.Fatalf("failed to open cgroup path: %v", err)
 	}
+	defer cgroupFd.Close()
 
-	// First ensure qdisc is present
-	qdisc := &netlink.GenericQdisc{
-		QdiscAttrs: netlink.QdiscAttrs{
-			LinkIndex: linkIface.Attrs().Index,
-			Handle:    netlink.MakeHandle(0xffff, 0),
-			Parent:    netlink.HANDLE_CLSACT,
-		},
-		QdiscType: "clsact",
-	}
-	_ = netlink.QdiscAdd(qdisc) // ignore error if already exists
-
-	// Attach program
-     tcLink, err := link.AttachTCX(
-		link.TCXOptions{
-			Program:   prog,
-			Interface: linkIface.Attrs().Index,
-			
-		},
-	 )
+	// Attach program to cgroup (connect4 = IPv4 TCP connect)
+	l, err := link.AttachCgroup(link.CgroupOptions{
+		Path:    cgroupFd.Name(),
+		Attach:  ebpf.AttachCGroupInet4Connect,
+		Program: prog,
+	})
 	if err != nil {
-		log.Fatalf("failed to attach tc program: %v", err)
+		log.Fatalf("failed to attach to cgroup: %v", err)
 	}
-	defer tcLink.Close()
+	defer l.Close()
 
-	fmt.Printf("✅ Program attached to %s, allowed process: %s\n", *iface, *proc)
+	fmt.Printf("✅ Attached program to cgroup %s, allowed process: %s\n", *cgroupPath, *procName)
 	fmt.Println("Press ENTER to exit...")
 	fmt.Scanln()
 }
