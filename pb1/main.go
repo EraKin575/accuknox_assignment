@@ -71,8 +71,8 @@ func main() {
 	}
 	defer lnk.Close()
 
-	fmt.Printf("✅ XDP program 'tcp_drop' attached to %s\n", *iface)
-	fmt.Println("🔒 TCP packets to destination port", *port, "will be dropped")
-	fmt.Println("⏳ Press Enter to detach and exit...")
+	fmt.Printf("XDP program 'tcp_drop' attached to %s\n", *iface)
+	fmt.Println("TCP packets to destination port", *port, "will be dropped")
+	fmt.Println("Press Enter to detach and exit...")
 	fmt.Scanln()
 }

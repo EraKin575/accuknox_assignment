@@ -72,7 +72,6 @@ func main() {
 	}
 	defer l.Close()
 
-	fmt.Printf("✅ Attached program to cgroup %s, allowed process: %s\n", *cgroupPath, *procName)
 	fmt.Println("Press ENTER to exit...")
 	fmt.Scanln()
 }

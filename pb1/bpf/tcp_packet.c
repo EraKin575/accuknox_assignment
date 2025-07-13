@@ -19,7 +19,7 @@ int tcp_drop(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
 
     struct ethhdr *eth = data;
-    if ((void *)(eth + 1) > data_end)
+    if ((void *)(eth + 1) > data_end) //
         return XDP_PASS;
 
     if (eth->h_proto != __constant_htons(ETH_P_IP))
